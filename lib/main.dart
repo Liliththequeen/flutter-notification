@@ -1,152 +1,219 @@
-import 'package:flutter/material.dart';
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:my_app/firebase_api.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:path/path.dart';
 
-const AndroidNotificationChannel channel = AndroidNotificationChannel(
-    'high_importance_channel', // id
-    'High Importance Notifications', // title
-    'This channel is used for important notifications.', // description
-    importance: Importance.high,
-    playSound: true);
-
-final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
-    FlutterLocalNotificationsPlugin();
-
-Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  await Firebase.initializeApp();
-  print('A bg message just showed up :  ${message.messageId}');
-}
-
-Future<void> main() async {
+Future main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
+
   await Firebase.initializeApp();
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-  await flutterLocalNotificationsPlugin
-      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-      ?.createNotificationChannel(channel);
-
-  await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
-    alert: true,
-    badge: true,
-    sound: true,
-  );
   runApp(MyApp());
 }
 
 class MyApp extends StatelessWidget {
+  static final String title = 'Firebase Upload';
+
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-      ),
-      home: MyHomePage(title: 'Flutter Demo Home Page'),
-    );
-  }
+  Widget build(BuildContext context) => MaterialApp(
+        debugShowCheckedModeBanner: false,
+        title: title,
+        theme: ThemeData(primarySwatch: Colors.indigo),
+        home: MainPage(),
+      );
 }
 
-class MyHomePage extends StatefulWidget {
-  MyHomePage({Key?key, required this.title}) : super(key: key);
+class ButtonWidget extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  final VoidCallback onClicked;
 
-  final String title;
+  const ButtonWidget({
+    Key? key,
+    required this.icon,
+    required this.text,
+    required this.onClicked,
+  }) : super(key: key);
 
   @override
-  _MyHomePageState createState() => _MyHomePageState();
+  Widget build(BuildContext context) => ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          primary: Color.fromRGBO(114, 166, 245, 1),
+          minimumSize: Size.fromHeight(50),
+        ),
+        child: buildContent(),
+        onPressed: onClicked,
+      );
+
+  Widget buildContent() => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 28),
+          SizedBox(width: 16),
+          Text(
+            text,
+            style: TextStyle(fontSize: 22, color: Colors.white),
+          ),
+        ],
+      );
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-
+class MainPage extends StatefulWidget {
   @override
-  void initState() {
-    super.initState();
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      RemoteNotification? notification = message.notification;
-      AndroidNotification? android = message.notification?.android;
-      if (notification != null && android != null) {
-        flutterLocalNotificationsPlugin.show(
-            notification.hashCode,
-            notification.title,
-            notification.body,
-            NotificationDetails(
-              android: AndroidNotificationDetails(
-                channel.id,
-                channel.name,
-                channel.description,
-                color: Colors.blue,
-                playSound: true,
-                icon: '@mipmap/ic_launcher',
-              ),
-            ));
-      }
-    });
+  _MainPageState createState() => _MainPageState();
+}
 
-    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      print('A new onMessageOpenedApp event was published!');
-      RemoteNotification? notification = message.notification;
-      AndroidNotification? android = message.notification?.android;
-      if (notification != null && android != null) {
-        showDialog(
-            context: context,
-            builder: (_) {
-              return AlertDialog(
-                title: Text(notification.title!),
-                content: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [Text(notification.body!)],
-                  ),
-                ),
-              );
-            });
-      }
-    });
-  }
+class _MainPageState extends State<MainPage> {
+  UploadTask? task;
+  File? file;
 
-  void showNotification() {
-    setState(() {
-      _counter++;
-    });
-    flutterLocalNotificationsPlugin.show(
-        0,
-        "Testing $_counter",
-        "How you doin ?",
-        NotificationDetails(
-            android: AndroidNotificationDetails(channel.id, channel.name, channel.description,
-                importance: Importance.high,
-                color: Colors.blue,
-                playSound: true,
-                icon: '@mipmap/ic_launcher')));
-  }
+  set fileUrl(String fileUrl) {}
 
   @override
   Widget build(BuildContext context) {
+    final fileName = file != null ? basename(file!.path) : 'No File Selected';
+
+    final ref = FirebaseStorage.instance.ref().child(fileName);
+    
+    var fileUrl = ref.getDownloadURL();
+
+    print(fileUrl);
+
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.title),
+        title: Text(MyApp.title),
+        centerTitle: true,
       ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            Text(
-              'You have pushed the button this many times:',
-            ),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headline4,
-            ),
-          ],
+      body: Container(
+        padding: EdgeInsets.all(32),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ButtonWidget(
+                text: 'Select File',
+                icon: Icons.attach_file,
+
+                // onClicked: selectFile,
+                onClicked: () {
+                  showModalBottomSheet(
+                      shape: RoundedRectangleBorder(
+                        borderRadius:
+                            BorderRadius.vertical(top: Radius.circular(20)),
+                      ),
+                      context: context,
+                      builder: (context) {
+                        return Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            ListTile(
+                              leading: new Icon(Icons.photo),
+                              title: new Text('Change photo'),
+                              onTap: selectFile,
+                            ),
+                            ListTile(
+                              leading: new Icon(Icons.photo),
+                              title: new Text('New photo'),
+                              onTap: () {
+                                Navigator.pop(context);
+                              },
+                            ),
+                            ListTile(
+                              leading: new Icon(Icons.delete),
+                              title: new Text('Remove photo',
+                                  style: TextStyle(color: Colors.redAccent)),
+                              onTap: () {
+                                Navigator.pop(context);
+                              },
+                            ),
+                          ],
+                        );
+                      });
+                },
+              ),
+              SizedBox(height: 8),
+              // Image.file(
+              //   File(file!.path),
+              //   width: 100,
+              //   height: 100,
+              // ),
+              // CircleAvatar(
+              //   radius: 30.0,
+              //   backgroundImage: NetworkImage('https://firebasestorage.googleapis.com/v0/b/uniff-7d037.appspot.com/o/files%2Fimages%20(1).jpeg?alt=media&token=5dc3336f-cfa3-4571-b2cd-fd0fdecd1135'),
+              //   backgroundColor: Colors.transparent,
+              // ),
+              Text(
+                fileName,
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+              ),
+              SizedBox(height: 48),
+              ButtonWidget(
+                text: 'Upload File',
+                icon: Icons.cloud_upload_outlined,
+                onClicked: uploadFile,
+              ),
+            ],
+          ),
         ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: showNotification,
-        tooltip: 'Increment',
-        child: Icon(Icons.add),
       ),
     );
   }
+
+  Future selectFile() async {
+    final result = await FilePicker.platform.pickFiles(allowMultiple: false);
+
+    if (result == null) return;
+    final path = result.files.single.path!;
+
+    setState(() => file = File(path));
+  }
+
+  Future uploadFile() async {
+    if (file == null) return;
+
+    final fileName = basename(file!.path);
+    final destination = 'files/$fileName';
+
+    task = FirebaseApi.uploadFile(destination, file!);
+
+    
+
+    if (task == null) return;
+
+    final snapshot = await task!.whenComplete(() {});
+    final urlDownload = await snapshot.ref.getDownloadURL();
+
+    setState(() {
+    });
+
+    print('Download-Link: $urlDownload');
+  }
+
+
+//   Widget buildUploadStatus(UploadTask task) => StreamBuilder<TaskSnapshot>(
+//         stream: task.snapshotEvents,
+//         builder: (context, snapshot) {
+//           if (snapshot.hasData) {
+//             final snap = snapshot.data!;
+//             final progress = snap.bytesTransferred / snap.totalBytes;
+//             final percentage = (progress * 100).toStringAsFixed(2);
+
+//             return Text(
+//               '$percentage %',
+//               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+//             );
+//           } else {
+//             return Container();
+//           }
+//         },
+//       );
 }
